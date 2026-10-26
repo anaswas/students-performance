@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student ML App</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
+    h1 { text-align: center; }
+    .container { max-width: 900px; margin: auto; display: flex; gap: 20px; flex-wrap: wrap; }
+    .card { flex: 1; min-width: 300px; background: #fff; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.1); }
+    label { display: block; margin-top: 10px; font-size: 14px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; margin-top: 3px; }
+    button { margin-top: 15px; width: 100%; padding: 10px; background: #2563eb;
+             color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 15px; }
+    .result { margin-top: 15px; font-weight: bold; color: #166534; }
+  </style>
+</head>
+<body>
+  <h1>Student Sleep &amp; Performance Predictor</h1>
+  <div class="container">
+    <div class="card">
+      <h2>Predict CGPA (Regression)</h2>
+      <form id="regForm"></form>
+      <div class="result" id="regResult"></div>
+    </div>
+    <div class="card">
+      <h2>Predict Chronotype (Classification)</h2>
+      <form id="clfForm"></form>
+      <div class="result" id="clfResult"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = ""; // same server; alag host ho to e.g. "http://127.0.0.1:8000"
+
+    function nice(name) { return name.replace(/_/g, " "); }
+
+    function buildForm(formId, resultId, cfg, url, btnText, format) {
+      const form = document.getElementById(formId);
+      cfg.features.forEach(f => {
+        const label = document.createElement("label");
+        label.textContent = nice(f);
+        const input = document.createElement("input");
+        input.name = f; input.type = "number"; input.step = "any";
+        input.value = cfg.defaults[f]; input.required = true;
+        label.appendChild(input);
+        form.appendChild(label);
+      });
+      const btn = document.createElement("button");
+      btn.type = "submit"; btn.textContent = btnText;
+      form.appendChild(btn);
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const out = document.getElementById(resultId);
+        const body = {};
+        new FormData(form).forEach((v, k) => body[k] = parseFloat(v));
+        try {
+          const res = await fetch(API + url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) throw new Error("Server error " + res.status);
+          out.textContent = format(await res.json());
+        } catch (err) {
+          out.textContent = "Error: " + err.message;
+        }
+      });
+    }
+
+    fetch(API + "/info").then(r => r.json()).then(info => {
+      buildForm("regForm", "regResult", info.regression, "/predict/regression",
+                "Predict CGPA", d => "Predicted CGPA: " + d.prediction);
+      buildForm("clfForm", "clfResult", info.classification, "/predict/classification",
+                "Predict Chronotype", d => "Predicted chronotype: " + d.prediction);
+    }).catch(() => {
+      document.body.insertAdjacentHTML("beforeend", "<p style='text-align:center;color:red'>Backend se connect nahi ho saka. uvicorn chalaya hai?</p>");
+    });
+  </script>
+</body>
+</html>

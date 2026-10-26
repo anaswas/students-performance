@@ -1,0 +1,61 @@
+import joblib
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+app = FastAPI(title="ML App")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Load both models once at startup
+regression_model = joblib.load("models/regression_model.joblib")
+classification_model = joblib.load("models/classification_model.joblib")
+
+SPECIES = ["setosa", "versicolor", "virginica"]
+
+
+class HouseInput(BaseModel):
+    MedInc: float       # median income (in $10,000s)
+    HouseAge: float     # median house age (years)
+    AveRooms: float     # average rooms per household
+    AveBedrms: float    # average bedrooms per household
+    Population: float   # block population
+    AveOccup: float     # average household members
+    Latitude: float
+    Longitude: float
+
+
+class IrisInput(BaseModel):
+    sepal_length: float
+    sepal_width: float
+    petal_length: float
+    petal_width: float
+
+
+@app.get("/")
+def home():
+    return FileResponse("index.html")
+
+
+@app.post("/predict/regression")
+def predict_regression(data: HouseInput):
+    features = [[
+        data.MedInc, data.HouseAge, data.AveRooms, data.AveBedrms,
+        data.Population, data.AveOccup, data.Latitude, data.Longitude,
+    ]]
+    pred = float(regression_model.predict(features)[0])
+    return {"prediction": pred, "price_usd": round(pred * 100000, 2)}
+
+
+@app.post("/predict/classification")
+def predict_classification(data: IrisInput):
+    features = [[data.sepal_length, data.sepal_width,
+                 data.petal_length, data.petal_width]]
+    idx = int(classification_model.predict(features)[0])
+    return {"prediction": SPECIES[idx]}
