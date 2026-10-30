@@ -7,7 +7,7 @@
   <style>
     body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
     h1 { text-align: center; }
-    .container { max-width: 900px; margin: auto; display: flex; gap: 20px; flex-wrap: wrap; }
+    .container { max-width: 1100px; margin: auto; display: flex; gap: 20px; flex-wrap: wrap; }
     .card { flex: 1; min-width: 300px; background: #fff; padding: 20px; border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,.1); }
     label { display: block; margin-top: 10px; font-size: 14px; }
@@ -15,30 +15,40 @@
     button { margin-top: 15px; width: 100%; padding: 10px; background: #2563eb;
              color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 15px; }
     .result { margin-top: 15px; font-weight: bold; color: #166534; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 6px; text-align: left; }
   </style>
 </head>
 <body>
   <h1>Student Sleep &amp; Performance Predictor</h1>
   <div class="container">
     <div class="card">
-      <h2>Predict CGPA (Regression)</h2>
+      <h2>Predict CGPA (Linear Regression)</h2>
       <form id="regForm"></form>
       <div class="result" id="regResult"></div>
     </div>
     <div class="card">
-      <h2>Predict Chronotype (Classification)</h2>
+      <h2>Predict Chronotype (Random Forest)</h2>
       <form id="clfForm"></form>
       <div class="result" id="clfResult"></div>
+    </div>
+    <div class="card">
+      <h2>Compare Models (Chronotype)</h2>
+      <p style="font-size:13px">Logistic Regression, SVM, Naive Bayes, Decision Tree: ek hi input par sab ka prediction.</p>
+      <form id="cmpForm"></form>
+      <table id="cmpTable" style="display:none">
+        <thead><tr><th>Model</th><th>Test accuracy</th><th>Prediction</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="result" id="cmpResult"></div>
     </div>
   </div>
 
   <script>
     const API = ""; // same server; alag host ho to e.g. "http://127.0.0.1:8000"
+    const nice = n => n.replace(/_/g, " ");
 
-    function nice(name) { return name.replace(/_/g, " "); }
-
-    function buildForm(formId, resultId, cfg, url, btnText, format) {
-      const form = document.getElementById(formId);
+    function buildFields(form, cfg, btnText) {
       cfg.features.forEach(f => {
         const label = document.createElement("label");
         label.textContent = nice(f);
@@ -51,33 +61,67 @@
       const btn = document.createElement("button");
       btn.type = "submit"; btn.textContent = btnText;
       form.appendChild(btn);
+    }
 
+    const getBody = form => {
+      const body = {};
+      new FormData(form).forEach((v, k) => body[k] = parseFloat(v));
+      return body;
+    };
+
+    async function post(url, body) {
+      const res = await fetch(API + url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Server error " + res.status);
+      return res.json();
+    }
+
+    function singleForm(formId, resultId, cfg, url, btnText, format) {
+      const form = document.getElementById(formId);
+      buildFields(form, cfg, btnText);
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const out = document.getElementById(resultId);
-        const body = {};
-        new FormData(form).forEach((v, k) => body[k] = parseFloat(v));
-        try {
-          const res = await fetch(API + url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!res.ok) throw new Error("Server error " + res.status);
-          out.textContent = format(await res.json());
-        } catch (err) {
-          out.textContent = "Error: " + err.message;
-        }
+        try { out.textContent = format(await post(url, getBody(form))); }
+        catch (err) { out.textContent = "Error: " + err.message; }
       });
     }
 
     fetch(API + "/info").then(r => r.json()).then(info => {
-      buildForm("regForm", "regResult", info.regression, "/predict/regression",
-                "Predict CGPA", d => "Predicted CGPA: " + d.prediction);
-      buildForm("clfForm", "clfResult", info.classification, "/predict/classification",
-                "Predict Chronotype", d => "Predicted chronotype: " + d.prediction);
+      singleForm("regForm", "regResult", info.regression, "/predict/regression",
+                 "Predict CGPA", d => "Predicted CGPA: " + d.prediction);
+      singleForm("clfForm", "clfResult", info.classification, "/predict/classification",
+                 "Predict Chronotype", d => "Predicted chronotype: " + d.prediction);
+
+      // Compare card
+      const form = document.getElementById("cmpForm");
+      buildFields(form, info.classification, "Compare all models");
+      const tbody = document.querySelector("#cmpTable tbody");
+      const table = document.getElementById("cmpTable");
+      const out = document.getElementById("cmpResult");
+      if (info.compare.length === 0) {
+        out.textContent = "Naye models nahi mile. Pehle: python train_more.py";
+        form.style.display = "none";
+      }
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const body = getBody(form);
+        tbody.innerHTML = ""; out.textContent = "";
+        try {
+          for (const m of info.compare) {
+            const d = await post("/predict/" + m.key, body);
+            tbody.insertAdjacentHTML("beforeend",
+              `<tr><td>${m.label}</td><td>${(m.accuracy * 100).toFixed(1)}%</td><td><b>${d.prediction}</b></td></tr>`);
+          }
+          table.style.display = "table";
+        } catch (err) { out.textContent = "Error: " + err.message; }
+      });
     }).catch(() => {
-      document.body.insertAdjacentHTML("beforeend", "<p style='text-align:center;color:red'>Backend se connect nahi ho saka. uvicorn chalaya hai?</p>");
+      document.body.insertAdjacentHTML("beforeend",
+        "<p style='text-align:center;color:red'>Backend se connect nahi ho saka. uvicorn chalaya hai?</p>");
     });
   </script>
 </body>
